@@ -1,0 +1,21 @@
+{
+  "name": "app-gestao-pastoral",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "dev:api": "pnpm --filter @gestao-pastoral/api dev",
+    "dev:web": "pnpm --filter @gestao-pastoral/web dev",
+    "build": "pnpm --filter @gestao-pastoral/shared build && pnpm --filter @gestao-pastoral/api build && pnpm --filter @gestao-pastoral/web build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "test:cov": "pnpm -r test:cov",
+    "typecheck": "pnpm -r typecheck",
+    "db:generate": "pnpm --filter @gestao-pastoral/api prisma:generate",
+    "db:migrate": "pnpm --filter @gestao-pastoral/api prisma:migrate",
+    "db:seed": "pnpm --filter @gestao-pastoral/api prisma:seed"
+  }
+}
