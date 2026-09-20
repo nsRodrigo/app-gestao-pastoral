@@ -65,8 +65,9 @@ async function seedSuperAdmin() {
       email: "superadmin@dizimoconectado.com.br",
       passwordHash,
       organizationId: null,
+      isSuperAdmin: true,
     },
-    update: {},
+    update: { isSuperAdmin: true },
   });
   return superAdmin;
 }

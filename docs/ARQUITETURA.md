@@ -66,6 +66,14 @@ organizações diferentes, futuramente).
 Perfis seed (fixos, correspondem à seção 3): `SUPER_ADMIN`, `PAROCO`,
 `TESOUREIRO`, `SECRETARIA`, `COORDENADOR_DIZIMO`, `APOIADOR`, `DIZIMISTA`.
 
+**SUPER_ADMIN é representado por um flag, não por `UserRole`.** Como
+`UserRole` é sempre escopado a uma organização (`organizationId` não
+nulo) e o Super Administrador é um usuário de plataforma sem organização
+fixa, ele é identificado por `User.isSuperAdmin: Boolean`. O
+`AuthService.buildJwtPayload` verifica esse flag antes de consultar
+`userRoles`; quando verdadeiro, o JWT recebe `role: SUPER_ADMIN` e todas
+as permissões, independentemente de qualquer `UserRole` cadastrado.
+
 Permissões sensíveis (ex.: ver valor financeiro individual) são
 configuráveis por organização via flags em `OrganizationSettings`
 (ex.: `paroco_pode_ver_valores_individuais`), conforme seção 3 ("acesso a
@@ -84,13 +92,34 @@ lógica etc.) grava `AuditLog` com usuário, ação, entidade, valores
 anterior/novo, IP e timestamp. `AuditLog` é append-only: não há endpoint de
 update/delete para usuários comuns (seção 29/30).
 
-## 7. Fases de implementação
+## 7. Painel Web (apps/web)
+
+- **Next.js 15 (App Router) + React 19**: escolhido especificamente pelas
+  Server Actions com `useActionState`/`useFormStatus` estáveis, que
+  eliminam a necessidade de uma camada de API própria no frontend para
+  mutações simples (criar família, cadastro rápido de dizimista etc.).
+- **Sessão via cookies httpOnly** (`access_token`, `refresh_token`,
+  `session`), nunca expostos a `localStorage`/JS do cliente — mitiga
+  roubo de token via XSS (seção 32/LGPD). O papel e as permissões do
+  usuário são lidos no servidor decodificando o payload do JWT (sem
+  verificar assinatura, pois a validação real é sempre feita pela API);
+  a UI usa isso apenas para decidir o que renderizar, nunca como fonte de
+  autorização — cada endpoint da API reaplica o `PermissionsGuard`.
+- **Renovação de sessão**: nesta fase, um 401 da API durante uma
+  Server Component/Action redireciona para `/login` (sessão expira em até
+  15 min de inatividade). Refresh silencioso automático fica para uma
+  iteração futura.
+- **Navegação condicionada por permissão**: a barra lateral (seção 37)
+  só lista os módulos que o usuário pode acessar E que já existem nesta
+  fase — nunca um link "morto" (seção 57).
+
+## 8. Fases de implementação
 
 Seguindo a seção 55 do prompt mestre, este projeto será implementado em
 fases incrementais, cada uma com testes e DoD (seção 54) antes de avançar:
 
-1. **Fundação** (em andamento): arquitetura, banco, autenticação, RBAC,
-   organizações, famílias, dizimistas.
+1. **Fundação** (concluída nesta entrega): arquitetura, banco, autenticação,
+   RBAC, organizações, famílias, dizimistas, painel web e CI.
 2. Financeiro: contribuições, métodos, QR Code, recibos, dashboard.
 3. Pagamentos: Pix, cartão, webhooks, recorrência, conciliação.
 4. Pastoral: cuidado pastoral, oração, espiritualidade, aniversários,

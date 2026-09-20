@@ -1,5 +1,5 @@
 import { Injectable, UnauthorizedException } from "@nestjs/common";
-import { RoleName } from "@gestao-pastoral/shared";
+import { ALL_PERMISSIONS, RoleName } from "@gestao-pastoral/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { PasswordService } from "./password.service";
 import { TokenService } from "./token.service";
@@ -43,6 +43,18 @@ export class AuthService {
         },
       },
     });
+
+    if (user.isSuperAdmin) {
+      return {
+        payload: {
+          sub: user.id,
+          organizationId: null,
+          role: RoleName.SUPER_ADMIN,
+          permissions: ALL_PERMISSIONS,
+        },
+        user: { id: user.id, name: user.name, email: user.email },
+      };
+    }
 
     // Nesta fase um usuário possui no máximo um papel (em sua organização).
     const userRole = user.userRoles[0];

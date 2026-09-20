@@ -135,7 +135,13 @@ export async function createSuperAdmin(prisma: PrismaService): Promise<{
   });
   const email = `${unique("superadmin")}@example.com`;
   const user = await prisma.user.create({
-    data: { name: "Super Admin", email, passwordHash, organizationId: null },
+    data: {
+      name: "Super Admin",
+      email,
+      passwordHash,
+      organizationId: null,
+      isSuperAdmin: true,
+    },
   });
   return { userId: user.id, email };
 }

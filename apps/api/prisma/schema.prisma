@@ -79,6 +79,10 @@ model User {
   phone        String?
 
   isActive     Boolean   @default(true)
+  /// Usuário de plataforma com acesso irrestrito a todas as organizações
+  /// (seção 3, Perfil 1). Não possui UserRole (que é sempre escopado a uma
+  /// organização) — este flag é a única fonte de verdade para o papel.
+  isSuperAdmin Boolean   @default(false)
   mfaEnabled   Boolean   @default(false)
   mfaSecret    String?
 

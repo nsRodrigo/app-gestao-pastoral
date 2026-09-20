@@ -11,7 +11,7 @@
     "test": "jest --config jest.config.js",
     "test:watch": "jest --config jest.config.js --watch",
     "test:cov": "jest --config jest.config.js --coverage",
-    "test:e2e": "jest --config jest-e2e.config.js",
+    "test:e2e": "jest --config jest-e2e.config.js --runInBand",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",

@@ -1,0 +1,10 @@
+{
+  "name": "Dízimo Conectado",
+  "short_name": "Dízimo Conectado",
+  "description": "Mais fé, mais pessoas, mais missão.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#EAF1F8",
+  "theme_color": "#1E3A5F",
+  "icons": []
+}

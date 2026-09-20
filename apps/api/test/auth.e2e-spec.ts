@@ -6,6 +6,7 @@ import {
   TEST_PASSWORD,
   cleanTenantData,
   createOrganizationWithUser,
+  createSuperAdmin,
 } from "./fixtures";
 import { PrismaService } from "../src/prisma/prisma.service";
 
@@ -120,5 +121,34 @@ describe("Auth (e2e)", () => {
       .post("/api/auth/refresh")
       .send({ refreshToken: login.body.refreshToken })
       .expect(401);
+  });
+
+  it("SUPER_ADMIN (sem UserRole, apenas isSuperAdmin) recebe o papel e todas as permissões no JWT", async () => {
+    const superAdmin = await createSuperAdmin(prisma);
+
+    const login = await request(app.getHttpServer())
+      .post("/api/auth/login")
+      .send({ email: superAdmin.email, password: TEST_PASSWORD })
+      .expect(200);
+
+    expect(login.body.user.role).toBe(RoleName.SUPER_ADMIN);
+    expect(login.body.user.organizationId).toBeNull();
+
+    // Confirma que o token realmente carrega privilégios de SUPER_ADMIN
+    // fazendo uma ação exclusiva do perfil: criar uma organização.
+    const created = await request(app.getHttpServer())
+      .post("/api/organizations")
+      .set("Authorization", `Bearer ${login.body.accessToken}`)
+      .send({
+        name: "Nova Paróquia via Super Admin",
+        admin: {
+          name: "Admin Inicial",
+          email: `admin-${Date.now()}@example.com`,
+          password: TEST_PASSWORD,
+        },
+      })
+      .expect(201);
+
+    expect(created.body.name).toBe("Nova Paróquia via Super Admin");
   });
 });
