@@ -1,0 +1,333 @@
+// Schema Fase 1 — Fundação (arquitetura, banco, autenticação, RBAC,
+// organizações, famílias, dizimistas). Ver docs/ARQUITETURA.md para as
+// decisões de modelagem (multi-tenant lógico, dinheiro em centavos, RBAC).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Organização (paróquia/igreja) — raiz do multi-tenant (seção 45)
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  logoUrl   String?
+  address   String?
+  phone     String?
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  settings    OrganizationSettings?
+  users       User[]
+  communities Community[]
+  families    Family[]
+  members     Member[]
+  auditLogs   AuditLog[]
+  userRoles   UserRole[]
+
+  @@map("organizations")
+}
+
+/// Configurações que tornam comportamentos do RBAC ajustáveis por
+/// organização sem exigir deploy (seção 3: "acesso a valores individuais
+/// deve ser configurável" para o Pároco).
+model OrganizationSettings {
+  id             String  @id @default(uuid())
+  organizationId String  @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  parocoPodeVerValoresIndividuais Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("organization_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Usuários, papéis (RBAC) — seção 3
+// ---------------------------------------------------------------------------
+
+enum RoleNameEnum {
+  SUPER_ADMIN
+  PAROCO
+  TESOUREIRO
+  SECRETARIA
+  COORDENADOR_DIZIMO
+  APOIADOR
+  DIZIMISTA
+}
+
+model User {
+  id           String    @id @default(uuid())
+  /// Nulo apenas para SUPER_ADMIN (usuário de plataforma, fora de um tenant).
+  organizationId String?
+  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name         String
+  email        String    @unique
+  passwordHash String
+  phone        String?
+
+  isActive     Boolean   @default(true)
+  /// Usuário de plataforma com acesso irrestrito a todas as organizações
+  /// (seção 3, Perfil 1). Não possui UserRole (que é sempre escopado a uma
+  /// organização) — este flag é a única fonte de verdade para o papel.
+  isSuperAdmin Boolean   @default(false)
+  mfaEnabled   Boolean   @default(false)
+  mfaSecret    String?
+
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  userRoles     UserRole[]
+  refreshTokens RefreshToken[]
+  memberProfile Member?        @relation("MemberUser")
+  auditLogs     AuditLog[]
+
+  @@index([organizationId])
+  @@map("users")
+}
+
+model Role {
+  id          String       @id @default(uuid())
+  name        RoleNameEnum @unique
+  description String?
+
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id  String @id @default(uuid())
+  /// Ex.: "member:read", "contribution:create"
+  key String @unique
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+/// Atribuição de um papel a um usuário dentro de uma organização. Um
+/// usuário tem no máximo um papel por organização nesta fase (simplifica o
+/// RBAC); o schema já suporta múltiplas organizações por usuário no futuro.
+model UserRole {
+  id             String @id @default(uuid())
+  userId         String
+  organizationId String
+  roleId         String
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role         Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@map("user_roles")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Hash do token (nunca armazenar o token em texto puro).
+  tokenHash String   @unique
+  userAgent String?
+  ipAddress String?
+
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Famílias e dizimistas — seções 4, 5, 6
+// ---------------------------------------------------------------------------
+
+model Community {
+  id             String @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name String
+
+  members Member[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, name])
+  @@map("communities")
+}
+
+model Family {
+  id             String @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name String
+
+  addressStreet       String?
+  addressNumber       String?
+  addressComplement   String?
+  addressNeighborhood String?
+  addressCity         String?
+  addressState        String?
+  addressZipCode      String?
+
+  members Member[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@map("families")
+}
+
+enum MemberStatus {
+  ATIVO
+  INATIVO
+  ARQUIVADO
+}
+
+enum Sex {
+  MASCULINO
+  FEMININO
+  NAO_INFORMADO
+}
+
+enum ContributionFrequency {
+  MENSAL
+  TRIMESTRAL
+  ANUAL
+  AVULSO
+}
+
+enum ContributionPreference {
+  PIX
+  CARTAO
+  DINHEIRO
+  TRANSFERENCIA
+}
+
+model Member {
+  id             String @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  familyId String?
+  family   Family? @relation(fields: [familyId], references: [id], onDelete: SetNull)
+
+  /// Conta de login vinculada (auto-atendimento do dizimista). Opcional:
+  /// nem todo dizimista possui acesso ao app.
+  userId String? @unique
+  user   User?   @relation("MemberUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  // Dados pessoais (seção 5)
+  fullName   String
+  socialName String?
+  cpf        String?
+  birthDate  DateTime?
+  sex        Sex?
+  phone      String?
+  whatsapp   String?
+  email      String?
+
+  addressStreet       String?
+  addressNumber       String?
+  addressComplement   String?
+  addressNeighborhood String?
+  addressCity         String?
+  addressState        String?
+  addressZipCode      String?
+
+  // Dados pastorais (seção 5)
+  communityId   String?
+  community     Community? @relation(fields: [communityId], references: [id], onDelete: SetNull)
+  pastoral      String?
+  ministry      String?
+  group         String?
+  entryDate     DateTime?
+  baptismDate   DateTime?
+  pastoralNotes String?
+
+  // Dados financeiros (seção 5) — nunca obrigatórios
+  status                 MemberStatus            @default(ATIVO)
+  contributionFrequency  ContributionFrequency?
+  suggestedAmountCents   Int?
+  contributionPreference ContributionPreference?
+
+  // Carteirinha digital / QR Code (seção 6)
+  qrCodeToken   String  @unique
+  qrCodeRevoked Boolean @default(false)
+
+  termsAcceptedAt      DateTime?
+  communicationConsent Boolean   @default(false)
+
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([organizationId, cpf])
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@map("members")
+}
+
+// ---------------------------------------------------------------------------
+// Auditoria — seções 29, 30
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id             String  @id @default(uuid())
+  /// Nulo apenas para ações de plataforma (ex.: criação da própria
+  /// organização), antes de existir um tenant.
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  action     String
+  entityType String
+  entityId   String?
+
+  previousValue Json?
+  newValue      Json?
+
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
