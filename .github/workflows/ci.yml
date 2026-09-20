@@ -8,7 +8,7 @@ on:
 
 env:
   PNPM_VERSION: 10.33.0
-  NODE_VERSION: 20
+  NODE_VERSION: 22
 
 jobs:
   test-api:
@@ -58,6 +58,9 @@ jobs:
       - name: Build do pacote compartilhado
         run: pnpm --filter @gestao-pastoral/shared build
 
+      - name: Gerar Prisma Client
+        run: pnpm --filter @gestao-pastoral/api prisma:generate
+
       - name: Lint (shared + api)
         run: |
           pnpm --filter @gestao-pastoral/shared lint
@@ -67,9 +70,6 @@ jobs:
         run: |
           pnpm --filter @gestao-pastoral/shared typecheck
           pnpm --filter @gestao-pastoral/api typecheck
-
-      - name: Gerar Prisma Client
-        run: pnpm --filter @gestao-pastoral/api prisma:generate
 
       - name: Aplicar migrations no banco de teste
         run: pnpm --filter @gestao-pastoral/api prisma:deploy
