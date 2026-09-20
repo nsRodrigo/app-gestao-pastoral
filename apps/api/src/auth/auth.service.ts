@@ -38,9 +38,7 @@ export class AuthService {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
       include: {
-        userRoles: {
-          include: { role: { include: { rolePermissions: { include: { permission: true } } } } },
-        },
+        userRoles: { include: { role: true } },
       },
     });
 
@@ -60,8 +58,18 @@ export class AuthService {
     const userRole = user.userRoles[0];
 
     const role = (userRole?.role.name ?? RoleName.DIZIMISTA) as RoleName;
-    const permissions =
-      userRole?.role.rolePermissions.map((rp) => rp.permission.key) ?? [];
+
+    // Permissões são atribuídas por organização (RolePermission.organizationId),
+    // não mais globalmente — cada paróquia pode customizar o que cada papel
+    // pode fazer (seção 3).
+    let permissions: string[] = [];
+    if (userRole) {
+      const rolePermissions = await this.prisma.rolePermission.findMany({
+        where: { organizationId: userRole.organizationId, roleId: userRole.roleId },
+        include: { permission: true },
+      });
+      permissions = rolePermissions.map((rp) => rp.permission.key);
+    }
 
     return {
       payload: {

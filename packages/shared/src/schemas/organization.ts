@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { PasswordSchema } from "./auth";
+import { Permission } from "../permissions";
+import { RoleName } from "../roles";
 
 const slugify = (v: string) =>
   v
@@ -35,3 +37,34 @@ export const UpdateOrganizationSettingsSchema = z.object({
 export type UpdateOrganizationSettingsInput = z.infer<
   typeof UpdateOrganizationSettingsSchema
 >;
+
+/**
+ * Papéis cuja matriz de permissões pode ser customizada por organização
+ * (seção 3). SUPER_ADMIN (bypass total), PAROCO e DIZIMISTA ficam fixos —
+ * o Pároco gerencia esta tela, então seu próprio acesso não passa por ela
+ * (evita autoexclusão acidental).
+ */
+export const CUSTOMIZABLE_ROLES = [
+  RoleName.TESOUREIRO,
+  RoleName.SECRETARIA,
+  RoleName.COORDENADOR_DIZIMO,
+  RoleName.APOIADOR,
+] as const;
+
+/** Ações de plataforma que nunca podem ser delegadas a um papel de organização. */
+const NON_ASSIGNABLE_PERMISSIONS: Permission[] = [Permission.ORGANIZATION_MANAGE];
+
+export const RolePermissionsEntrySchema = z.object({
+  role: z.enum(CUSTOMIZABLE_ROLES),
+  permissions: z
+    .array(z.nativeEnum(Permission))
+    .refine((perms) => perms.every((p) => !NON_ASSIGNABLE_PERMISSIONS.includes(p)), {
+      message: "Esta permissão não pode ser atribuída por esta tela.",
+    }),
+});
+export type RolePermissionsEntry = z.infer<typeof RolePermissionsEntrySchema>;
+
+export const UpdateRolePermissionsSchema = z.object({
+  roles: z.array(RolePermissionsEntrySchema),
+});
+export type UpdateRolePermissionsInput = z.infer<typeof UpdateRolePermissionsSchema>;

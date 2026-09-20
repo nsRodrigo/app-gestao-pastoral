@@ -1,5 +1,6 @@
 export * from "./roles";
 export * from "./permissions";
+export * from "./permission-groups";
 export * from "./validators/cpf";
 export * from "./schemas/auth";
 export * from "./schemas/family";

@@ -8,7 +8,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!session) redirect("/login");
 
   const items = NAV_ITEMS.filter(
-    (item) => !item.permission || hasPermission(session, item.permission),
+    (item) =>
+      (!item.permission || hasPermission(session, item.permission)) &&
+      (!item.roles || item.roles.includes(session.role)),
   );
 
   return (

@@ -1,12 +1,9 @@
 /* eslint-disable no-console */
 import { PrismaClient } from "@prisma/client";
 import * as argon2 from "argon2";
-import {
-  ALL_PERMISSIONS,
-  DEFAULT_ROLE_PERMISSIONS,
-  RoleName,
-} from "@gestao-pastoral/shared";
+import { ALL_PERMISSIONS, Permission, RoleName } from "@gestao-pastoral/shared";
 import { generateQrCodeToken } from "../src/members/qrcode-token.util";
+import { seedDefaultRolePermissions } from "../src/organizations/seed-role-permissions.util";
 
 const prisma = new PrismaClient();
 
@@ -16,13 +13,21 @@ async function hash(password: string) {
   return argon2.hash(password, { type: argon2.argon2id });
 }
 
+/**
+ * Popula os catálogos globais `Permission` e `Role` (compartilhados entre
+ * todas as organizações). A atribuição de permissões por papel agora é por
+ * organização (`RolePermission.organizationId`) — ver `seedOrganization` e
+ * `seedDefaultRolePermissions`.
+ */
 async function seedRolesAndPermissions() {
+  const permissionIdsByKey: Record<Permission, string> = {} as never;
   for (const permission of ALL_PERMISSIONS) {
-    await prisma.permission.upsert({
+    const created = await prisma.permission.upsert({
       where: { key: permission },
       create: { key: permission },
       update: {},
     });
+    permissionIdsByKey[permission] = created.id;
   }
 
   const roles: Record<RoleName, { id: string }> = {} as never;
@@ -35,25 +40,7 @@ async function seedRolesAndPermissions() {
     roles[roleName] = role;
   }
 
-  for (const [roleName, permissionKeys] of Object.entries(
-    DEFAULT_ROLE_PERMISSIONS,
-  )) {
-    const role = roles[roleName as RoleName];
-    for (const key of permissionKeys) {
-      const permission = await prisma.permission.findUniqueOrThrow({
-        where: { key },
-      });
-      await prisma.rolePermission.upsert({
-        where: {
-          roleId_permissionId: { roleId: role.id, permissionId: permission.id },
-        },
-        create: { roleId: role.id, permissionId: permission.id },
-        update: {},
-      });
-    }
-  }
-
-  return roles;
+  return { roles, permissionIdsByKey };
 }
 
 async function seedSuperAdmin() {
@@ -72,7 +59,10 @@ async function seedSuperAdmin() {
   return superAdmin;
 }
 
-async function seedOrganization(roles: Record<RoleName, { id: string }>) {
+async function seedOrganization(
+  roles: Record<RoleName, { id: string }>,
+  permissionIdsByKey: Record<Permission, string>,
+) {
   const organization = await prisma.organization.upsert({
     where: { slug: "nossa-senhora-da-gruta" },
     create: {
@@ -85,6 +75,11 @@ async function seedOrganization(roles: Record<RoleName, { id: string }>) {
     },
     update: {},
   });
+
+  const roleIdsByName = Object.fromEntries(
+    Object.entries(roles).map(([name, role]) => [name, role.id]),
+  ) as Record<RoleName, string>;
+  await seedDefaultRolePermissions(prisma, organization.id, roleIdsByName, permissionIdsByKey);
 
   const staff: Array<{
     name: string;
@@ -238,13 +233,13 @@ async function seedFamiliesAndMembers(organizationId: string, roles: Record<Role
 
 async function main() {
   console.log("Seed: papéis e permissões...");
-  const roles = await seedRolesAndPermissions();
+  const { roles, permissionIdsByKey } = await seedRolesAndPermissions();
 
   console.log("Seed: super administrador...");
   await seedSuperAdmin();
 
   console.log("Seed: organização e equipe...");
-  const organization = await seedOrganization(roles);
+  const organization = await seedOrganization(roles, permissionIdsByKey);
 
   console.log("Seed: famílias e dizimistas...");
   await seedFamiliesAndMembers(organization.id, roles);

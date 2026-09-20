@@ -1,31 +1,34 @@
 import * as argon2 from "argon2";
-import {
-  ALL_PERMISSIONS,
-  DEFAULT_ROLE_PERMISSIONS,
-  RoleName,
-} from "@gestao-pastoral/shared";
+import { ALL_PERMISSIONS, Permission, RoleName } from "@gestao-pastoral/shared";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { generateQrCodeToken } from "../src/members/qrcode-token.util";
+import { seedDefaultRolePermissions } from "../src/organizations/seed-role-permissions.util";
 
 export const TEST_PASSWORD = "SenhaForte123";
 
-let roleIdsCache: Record<string, string> | null = null;
+let roleIdsCache: Record<RoleName, string> | null = null;
+let permissionIdsCache: Record<Permission, string> | null = null;
 
 /** Garante que o catálogo global de papéis/permissões existe (idempotente). */
-export async function ensureRolesAndPermissions(
-  prisma: PrismaService,
-): Promise<Record<string, string>> {
-  if (roleIdsCache) return roleIdsCache;
+export async function ensureRolesAndPermissions(prisma: PrismaService): Promise<{
+  roleIds: Record<RoleName, string>;
+  permissionIds: Record<Permission, string>;
+}> {
+  if (roleIdsCache && permissionIdsCache) {
+    return { roleIds: roleIdsCache, permissionIds: permissionIdsCache };
+  }
 
+  const permissionIds: Record<Permission, string> = {} as never;
   for (const key of ALL_PERMISSIONS) {
-    await prisma.permission.upsert({
+    const permission = await prisma.permission.upsert({
       where: { key },
       create: { key },
       update: {},
     });
+    permissionIds[key] = permission.id;
   }
 
-  const roleIds: Record<string, string> = {};
+  const roleIds: Record<RoleName, string> = {} as never;
   for (const roleName of Object.values(RoleName)) {
     const role = await prisma.role.upsert({
       where: { name: roleName },
@@ -35,28 +38,9 @@ export async function ensureRolesAndPermissions(
     roleIds[roleName] = role.id;
   }
 
-  for (const [roleName, permissionKeys] of Object.entries(
-    DEFAULT_ROLE_PERMISSIONS,
-  )) {
-    for (const key of permissionKeys) {
-      const permission = await prisma.permission.findUniqueOrThrow({
-        where: { key },
-      });
-      await prisma.rolePermission.upsert({
-        where: {
-          roleId_permissionId: {
-            roleId: roleIds[roleName],
-            permissionId: permission.id,
-          },
-        },
-        create: { roleId: roleIds[roleName], permissionId: permission.id },
-        update: {},
-      });
-    }
-  }
-
   roleIdsCache = roleIds;
-  return roleIds;
+  permissionIdsCache = permissionIds;
+  return { roleIds, permissionIds };
 }
 
 /** Remove todos os dados de tenants entre testes, preservando o catálogo global de papéis/permissões. */
@@ -90,7 +74,7 @@ export async function createOrganizationWithUser(
   role: RoleName,
   opts: { orgName?: string; parocoPodeVerValoresIndividuais?: boolean } = {},
 ): Promise<TestOrgUser> {
-  const roleIds = await ensureRolesAndPermissions(prisma);
+  const { roleIds, permissionIds } = await ensureRolesAndPermissions(prisma);
 
   const org = await prisma.organization.create({
     data: {
@@ -104,6 +88,10 @@ export async function createOrganizationWithUser(
       },
     },
   });
+
+  // Espelha o que OrganizationsService.create/prisma seed fazem: cada
+  // organização recebe sua própria cópia dos defaults de permissão por papel.
+  await seedDefaultRolePermissions(prisma, org.id, roleIds, permissionIds);
 
   const passwordHash = await argon2.hash(TEST_PASSWORD, {
     type: argon2.argon2id,

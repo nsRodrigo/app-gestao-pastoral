@@ -58,13 +58,16 @@ necessário).
 ## 4. RBAC (seção 3)
 
 Modelo: `Role` (perfil) — `Permission` (ação granular, ex.:
-`contribution.create`, `member.financial.read`) — `RolePermission` (padrão por
-perfil) — `UserRole` (atribuição do usuário a um perfil **dentro de uma
+`contribution.create`, `member.financial.read`) — `RolePermission`
+(atribuição de permissões a um perfil **dentro de uma organização**) —
+`UserRole` (atribuição do usuário a um perfil **dentro de uma
 organização**, permitindo que o mesmo usuário tenha perfis diferentes em
 organizações diferentes, futuramente).
 
 Perfis seed (fixos, correspondem à seção 3): `SUPER_ADMIN`, `PAROCO`,
 `TESOUREIRO`, `SECRETARIA`, `COORDENADOR_DIZIMO`, `APOIADOR`, `DIZIMISTA`.
+`Role` e `Permission` são catálogos globais (compartilhados por todas as
+organizações); só a atribuição em `RolePermission` é por organização.
 
 **SUPER_ADMIN é representado por um flag, não por `UserRole`.** Como
 `UserRole` é sempre escopado a uma organização (`organizationId` não
@@ -74,10 +77,50 @@ fixa, ele é identificado por `User.isSuperAdmin: Boolean`. O
 `userRoles`; quando verdadeiro, o JWT recebe `role: SUPER_ADMIN` e todas
 as permissões, independentemente de qualquer `UserRole` cadastrado.
 
-Permissões sensíveis (ex.: ver valor financeiro individual) são
-configuráveis por organização via flags em `OrganizationSettings`
-(ex.: `paroco_pode_ver_valores_individuais`), conforme seção 3 ("acesso a
-valores individuais deve ser configurável").
+### 4.1 Permissões customizáveis por organização
+
+Decisão (2026-09-20, a pedido do usuário): cada organização pode
+liberar/travar, por perfil, o que ele vê ou vê e edita — ex.: uma paróquia
+pode dar ao Apoiador acesso a valores recebidos, ou à Secretaria acesso a
+valores que por padrão só o Tesoureiro vê. Antes, `RolePermission` era uma
+matriz **global e fixa**, seedada uma única vez a partir de
+`DEFAULT_ROLE_PERMISSIONS` (`packages/shared/src/permissions.ts`).
+
+- `RolePermission` agora tem `organizationId` (chave composta
+  `organizationId+roleId+permissionId`). Cada organização recebe sua
+  própria cópia dos defaults na criação (`seedDefaultRolePermissions`,
+  usado tanto por `OrganizationsService.create` quanto por
+  `prisma/seed.ts`).
+- **Perfis fixos (não entram na matriz customizável):** `SUPER_ADMIN`
+  (bypass total, nunca usa `RolePermission`), `PAROCO` (evita
+  autoexclusão acidental — ele é quem gerencia esta tela) e `DIZIMISTA`
+  (sem permissões administrativas, acessa só a própria área). Somente
+  `TESOUREIRO`, `SECRETARIA`, `COORDENADOR_DIZIMO` e `APOIADOR`
+  (`CUSTOMIZABLE_ROLES` em `packages/shared/src/schemas/organization.ts`)
+  são customizáveis.
+- **Quem edita:** o Pároco da própria organização, ou o Super Admin (de
+  qualquer organização) — checagem por **papel**, não por uma nova
+  `Permission` dedicada (`OrganizationsService.requireRolePermissionsManager`),
+  para não precisar excluir essa própria permissão da matriz que ela
+  controlaria.
+- `Permission.ORGANIZATION_MANAGE` nunca aparece na matriz — é ação de
+  plataforma (criar organizações), não delegável a um perfil de paróquia.
+- UI (`apps/web/.../dashboard/permissoes`): as permissões granulares são
+  agrupadas por recurso em `PERMISSION_RESOURCE_GROUPS`
+  (`packages/shared/src/permission-groups.ts`) e expostas como um
+  seletor de 2 ou 3 níveis (Nada/Ver/Ver e editar) por perfil — mais
+  simples para quem não é técnico do que uma lista crua de permissões.
+- Como as permissões vêm do JWT (ver `PermissionsGuard`,
+  `apps/api/src/rbac/permissions.guard.ts`), uma mudança na matriz só
+  reflete para o usuário afetado no próximo `POST /auth/refresh` (mesmo
+  comportamento de uma troca de papel — `AuthService.buildJwtPayload` é
+  recalculado a cada refresh, dentro do prazo de 15 min do access token).
+
+Outras permissões sensíveis (ex.: Pároco ver valor financeiro individual)
+continuam configuráveis via flags dedicadas em `OrganizationSettings`
+(ex.: `parocoPodeVerValoresIndividuais`), quando a checagem precisa ser
+em tempo real e não pode esperar o próximo refresh do token (ver
+`MembersService.canViewFinancial`, que faz leitura direta no banco).
 
 ## 5. Dinheiro
 

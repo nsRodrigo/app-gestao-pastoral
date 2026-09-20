@@ -1,10 +1,12 @@
-import { Permission } from "@gestao-pastoral/shared";
+import { Permission, RoleName } from "@gestao-pastoral/shared";
 
 export interface NavItem {
   href: string;
   label: string;
   /** Quando ausente, o item aparece para qualquer usuário autenticado. */
   permission?: Permission;
+  /** Restringe o item a papéis específicos, além (ou no lugar) da permissão. */
+  roles?: RoleName[];
 }
 
 /**
@@ -19,4 +21,9 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/familias", label: "Famílias", permission: Permission.FAMILY_READ },
   { href: "/dashboard/usuarios", label: "Usuários", permission: Permission.USER_MANAGE },
   { href: "/dashboard/auditoria", label: "Auditoria", permission: Permission.AUDIT_READ },
+  {
+    href: "/dashboard/permissoes",
+    label: "Perfis e Permissões",
+    roles: [RoleName.PAROCO, RoleName.SUPER_ADMIN],
+  },
 ];

@@ -26,13 +26,14 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  settings    OrganizationSettings?
-  users       User[]
-  communities Community[]
-  families    Family[]
-  members     Member[]
-  auditLogs   AuditLog[]
-  userRoles   UserRole[]
+  settings        OrganizationSettings?
+  users           User[]
+  communities     Community[]
+  families        Family[]
+  members         Member[]
+  auditLogs       AuditLog[]
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
 
   @@map("organizations")
 }
@@ -120,14 +121,25 @@ model Permission {
   @@map("permissions")
 }
 
+/// Atribuição de permissões a um papel **dentro de uma organização**
+/// (seção 3: cada paróquia pode liberar/travar o que cada perfil faz —
+/// ex.: Secretaria ver valores que hoje só o Tesoureiro vê). Os catálogos
+/// `Role`/`Permission` continuam globais; só a atribuição é por
+/// organização. Os defaults de `DEFAULT_ROLE_PERMISSIONS`
+/// (packages/shared/src/permissions.ts) são copiados para cá na criação de
+/// cada organização — ver `seedDefaultRolePermissions`. SUPER_ADMIN nunca
+/// usa esta tabela (bypass total, ver `User.isSuperAdmin`).
 model RolePermission {
-  roleId       String
-  permissionId String
+  organizationId String
+  roleId         String
+  permissionId   String
 
-  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role         Role         @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission   @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
-  @@id([roleId, permissionId])
+  @@id([organizationId, roleId, permissionId])
+  @@index([organizationId])
   @@map("role_permissions")
 }
 
